@@ -1,0 +1,75 @@
+{
+  "name": "crypto-withdrawal-app",
+  "version": "1.0.0",
+  "description": "Desktop app for MEXC and CoinEx crypto withdrawals",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "electron": "electron .",
+    "electron:dev": "concurrently \"cross-env NODE_ENV=development next dev\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .\"",
+    "electron:build": "next build && electron-builder",
+    "electron:build:win": "next build && electron-builder --win",
+    "electron:build:mac": "next build && electron-builder --mac",
+    "electron:build:linux": "next build && electron-builder --linux"
+  },
+  "dependencies": {
+    "@types/crypto-js": "^4.2.2",
+    "crypto-js": "^4.2.0",
+    "next": "16.0.3",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-icons": "^5.5.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^39.2.1",
+    "electron-builder": "^26.0.12",
+    "eslint": "^9",
+    "eslint-config-next": "16.0.3",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "wait-on": "^9.0.3"
+  },
+ "build": {
+    "appId": "com.crypto.withdrawal.app",
+    "productName": "Crypto Withdrawal App",
+    "asar": false,
+    "files": [
+      "electron/**/*",
+      ".next/**/*",
+      "app/**/*",
+      "lib/**/*",
+      "public/**/*",
+      "node_modules/**/*",
+      "package.json",
+      "next.config.ts"
+    ],
+    "directories": {
+      "buildResources": "assets",
+      "output": "dist"
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.finance"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "assets/icon.png",
+      "category": "Finance"
+    }
+  }
+}

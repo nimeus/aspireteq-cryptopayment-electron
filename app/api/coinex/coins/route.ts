@@ -1,0 +1,23 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getCoinexAllCoins } from '@/lib/coinex-api';
+
+export async function POST(request: NextRequest) {
+  try {
+    const { apiKey, apiSecret } = await request.json();
+
+    if (!apiKey || !apiSecret) {
+      return NextResponse.json(
+        { error: 'API credentials are required' },
+        { status: 400 }
+      );
+    }
+
+    const coins = await getCoinexAllCoins({ apiKey, apiSecret });
+    return NextResponse.json(coins);
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || 'Failed to fetch coins' },
+      { status: 500 }
+    );
+  }
+}

@@ -1,0 +1,2142 @@
+﻿# CoinEx API v2 - Mass Withdrawal/Transfer Developer Guide
+
+**Version:** 2.0  
+**Last Updated:** November 2024  
+**API Base URL:** `https://api.coinex.com/v2`
+
+---
+
+## Table of Contents
+
+1. [Overview](#1-overview)
+2. [Prerequisites & Setup](#2-prerequisites--setup)
+3. [Authentication System](#3-authentication-system)
+4. [Core Implementation](#4-core-implementation)
+5. [Withdrawal Methods](#5-withdrawal-methods)
+6. [Complete Code Implementation](#6-complete-code-implementation)
+7. [Usage Examples](#7-usage-examples)
+8. [Error Handling](#8-error-handling)
+9. [Testing & Validation](#9-testing--validation)
+10. [Security Best Practices](#10-security-best-practices)
+11. [Troubleshooting](#11-troubleshooting)
+12. [API Reference](#12-api-reference)
+
+---
+
+## 1. Overview
+
+### 1.1 Purpose
+This guide provides complete implementation details for performing mass cryptocurrency withdrawals/transfers using the CoinEx API v2.
+
+### 1.2 Key Features
+- **On-chain Withdrawals**: Regular blockchain withdrawals to external wallets
+- **Inter-User Transfers**: Zero-fee instant transfers between CoinEx users
+- **Batch Processing**: Automated mass withdrawal/transfer to multiple recipients
+- **Real-time Status Tracking**: Monitor withdrawal progress and confirmations
+
+### 1.3 Withdrawal Methods Comparison 
+
+| Feature | On-Chain Withdrawal | Inter-User Transfer |
+|---------|-------------------|-------------------|
+| **Destination** | External blockchain address | CoinEx user (email/mobile) |
+| **Fees** | Yes (varies by network) | ✅ **ZERO** |
+| **Speed** | Minutes to hours | ⚡ **Instant** |
+| **Confirmations** | Required (blockchain) | None required |
+| **Use Case** | External wallets | Payment to CoinEx users |
+| **Chain Required** | Yes (e.g., ERC20, TRC20) | No |
+
+### 1.4 System Requirements
+- **Node.js**: v14.0 or higher
+- **Network**: Stable internet connection with static IP (recommended)
+- **Dependencies**: Native `crypto` module (Node.js built-in)
+
+---
+
+## 2. Prerequisites & Setup
+
+### 2.1 Create CoinEx Account
+1. Visit [https://www.coinex.com](https://www.coinex.com)
+2. Complete registration and KYC verification
+3. Enable 2FA (Google Authenticator or SMS)
+
+### 2.2 Generate API Key
+
+#### Step-by-Step:
+
+**Step 1: Access API Management**
+```
+Login → Click Avatar (top-right) → Select "API Management"
+```
+
+**Step 2: Create New API**
+```
+Click "Create API" button
+```
+
+**Step 3: Configure API Settings**
+```
+┌─────────────────────────────────────────┐
+│ API Configuration                       │
+├─────────────────────────────────────────┤
+│ API Remark:     [My Withdrawal API]     │
+│                                         │
+│ IP Whitelist:   [Your Server IP]       │
+│                 (Optional, max 50 IPs)  │
+│                                         │
+│ Permissions:    ☐ Trade                │
+│                 ☑ Withdraw              │ ← MUST CHECK
+│                                         │
+│ 2FA Code:       [______]                │
+└─────────────────────────────────────────┘
+```
+
+**Step 4: Save Credentials**
+After creation, you'll receive:
+- **Access ID**: `4DA36FFC61334695A66F8D29020EB589` (example)
+- **Secret Key**: `B4E3......6F2A` (example)
+
+⚠️ **CRITICAL**: Save these immediately. Secret Key is shown ONLY ONCE!
+
+#### API Key Notes:
+- **Validity**: 90 days (without IP binding), unlimited (with IP binding)
+- **Max Keys**: 50 per account
+- **IP Limit**: 50 IPs per key
+- **Activation Time**: ~10 minutes after creation
+
+### 2.3 Setup Withdrawal Whitelist
+
+**⚠️ MANDATORY**: All withdrawal addresses MUST be whitelisted before use.
+
+#### For On-Chain Withdrawals:
+
+**Step 1: Add Address to Whitelist**
+```
+Assets → Withdrawal → Select Coin → Normal Withdrawal
+```
+
+**Step 2: Fill Address Details**
+```
+┌─────────────────────────────────────────────┐
+│ Add Withdrawal Address                      │
+├─────────────────────────────────────────────┤
+│ Address Type:    ⦿ Normal Transfer          │
+│                  ○ Inter-User Transfer      │
+│                                             │
+│ Coin:            [USDT ▼]                   │
+│ Chain:           [TRC20 ▼]                  │
+│ Address:         [TXYZabc...123]            │
+│ Remark:          [Payment Address 1]        │
+│                                             │
+│ 2FA Code:        [______]                   │
+└─────────────────────────────────────────────┘
+```
+
+**Step 3: Email Verification**
+```
+1. Check your email for confirmation link
+2. Click "Reconfirm" in email (valid 30 minutes)
+3. Address is now whitelisted
+```
+
+#### For Inter-User Transfers:
+
+**Step 1: Add CoinEx User**
+```
+┌─────────────────────────────────────────────┐
+│ Add Withdrawal Address                      │
+├─────────────────────────────────────────────┤
+│ Address Type:    ○ Normal Transfer          │
+│                  ⦿ Inter-User Transfer      │
+│                                             │
+│ Recipient:       [user@email.com]           │
+│           OR     [+1234567890]              │
+│ Remark:          [Freelancer Payment]       │
+│                                             │
+│ 2FA Code:        [______]                   │
+└─────────────────────────────────────────────┘
+```
+
+### 2.4 Environment Setup
+
+Create a `.env` file:
+```bash
+# CoinEx API Credentials
+COINEX_ACCESS_ID=your_access_id_here
+COINEX_SECRET_KEY=your_secret_key_here
+
+# API Configuration
+COINEX_API_URL=https://api.coinex.com/v2
+REQUEST_DELAY_MS=1500
+
+# Safety Settings
+DRY_RUN_MODE=true
+MAX_WITHDRAWAL_AMOUNT=1000
+```
+
+Create `package.json`:
+```json
+{
+  "name": "coinex-mass-withdrawal",
+  "version": "1.0.0",
+  "description": "CoinEx mass withdrawal automation",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test.js",
+    "dry-run": "DRY_RUN_MODE=true node index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.3"
+  }
+}
+```
+
+Install dependencies:
+```bash
+npm install dotenv
+```
+
+---
+
+## 3. Authentication System
+
+### 3.1 Authentication Flow
+
+```
+┌──────────────┐
+│   Request    │
+│  Initiated   │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────────────────────────┐
+│ Generate Timestamp               │
+│ timestamp = Date.now()           │
+└──────────┬───────────────────────┘
+           │
+           ▼
+┌──────────────────────────────────┐
+│ Build Signature String           │
+│ prepared_str = method +          │
+│   request_path + body + timestamp│
+└──────────┬───────────────────────┘
+           │
+           ▼
+┌──────────────────────────────────┐
+│ Create HMAC-SHA256 Signature     │
+│ signed_str = HMAC(prepared_str)  │
+└──────────┬───────────────────────┘
+           │
+           ▼
+┌──────────────────────────────────┐
+│ Add Headers to Request           │
+│ X-COINEX-KEY                     │
+│ X-COINEX-SIGN                    │
+│ X-COINEX-TIMESTAMP               │
+└──────────┬───────────────────────┘
+           │
+           ▼
+┌──────────────────────────────────┐
+│  Send Request to CoinEx API      │
+└──────────────────────────────────┘
+```
+
+### 3.2 Signature Generation Algorithm
+
+**Formula:**
+```
+prepared_str = METHOD + REQUEST_PATH + BODY + TIMESTAMP
+signed_str = HMAC_SHA256(prepared_str, SECRET_KEY).toLowerCase()
+```
+
+**Example Breakdown:**
+
+```javascript
+// Given:
+METHOD = "POST"
+REQUEST_PATH = "/assets/withdraw"
+BODY = '{"ccy":"USDT","to_address":"user@email.com","amount":"100"}'
+TIMESTAMP = "1700490703564"
+SECRET_KEY = "your_secret_key"
+
+// Step 1: Concatenate
+prepared_str = "POST" + 
+               "/assets/withdraw" + 
+               '{"ccy":"USDT","to_address":"user@email.com","amount":"100"}' + 
+               "1700490703564"
+
+// Step 2: Generate HMAC-SHA256
+signed_str = HMAC_SHA256(prepared_str, SECRET_KEY)
+
+// Step 3: Convert to lowercase hex
+signed_str = signed_str.toLowerCase()
+// Result: "a1b2c3d4e5f6..."
+```
+
+### 3.3 Important Notes
+
+✅ **DO:**
+- Use lowercase hexadecimal for signature
+- Include query parameters in request_path (e.g., `/endpoint?param=value`)
+- Use empty string for body in GET/DELETE requests
+- Use milliseconds for timestamp
+
+❌ **DON'T:**
+- Send SECRET_KEY in any request
+- Use uppercase in signature
+- Include body parameter for GET requests
+- Use seconds for timestamp
+
+---
+
+## 4. Core Implementation
+
+### 4.1 Project Structure
+
+```
+coinex-withdrawal/
+├── .env                      # Environment variables
+├── package.json              # Project configuration
+├── src/
+│   ├── config.js            # Configuration manager
+│   ├── auth.js              # Authentication utilities
+│   ├── api.js               # API client
+│   ├── withdrawal.js        # Withdrawal logic
+│   └── utils.js             # Helper functions
+├── data/
+│   └── withdrawals.json     # Withdrawal data
+├── logs/
+│   └── withdrawal.log       # Transaction logs
+└── index.js                 # Main entry point
+```
+
+### 4.2 Configuration Module
+
+**File: `src/config.js`**
+
+```javascript
+import dotenv from 'dotenv';
+dotenv.config();
+
+export const config = {
+    // API Credentials
+    accessId: process.env.COINEX_ACCESS_ID,
+    secretKey: process.env.COINEX_SECRET_KEY,
+    apiUrl: process.env.COINEX_API_URL || 'https://api.coinex.com/v2',
+    
+    // Request Settings
+    requestDelay: parseInt(process.env.REQUEST_DELAY_MS) || 1500,
+    requestTimeout: 30000,
+    maxRetries: 3,
+    
+    // Safety Settings
+    dryRunMode: process.env.DRY_RUN_MODE === 'true',
+    maxWithdrawalAmount: parseFloat(process.env.MAX_WITHDRAWAL_AMOUNT) || 10000,
+    
+    // Logging
+    logLevel: process.env.LOG_LEVEL || 'info',
+    logToFile: process.env.LOG_TO_FILE === 'true'
+};
+
+// Validation
+export function validateConfig() {
+    const required = ['accessId', 'secretKey'];
+    const missing = required.filter(key => !config[key]);
+    
+    if (missing.length > 0) {
+        throw new Error(`Missing required config: ${missing.join(', ')}`);
+    }
+    
+    console.log('✓ Configuration validated');
+}
+```
+
+### 4.3 Authentication Module
+
+**File: `src/auth.js`**
+
+```javascript
+import crypto from 'crypto';
+import { config } from './config.js';
+
+/**
+ * Generate HMAC-SHA256 signature for CoinEx API v2
+ * 
+ * @param {string} method - HTTP method (GET, POST, DELETE)
+ * @param {string} requestPath - API endpoint path with query params
+ * @param {Object|null} body - Request body object
+ * @param {string} timestamp - Timestamp in milliseconds
+ * @returns {string} Lowercase hex signature
+ */
+export function generateSignature(method, requestPath, body, timestamp) {
+    // Build signature string
+    const bodyString = body ? JSON.stringify(body) : '';
+    const preparedStr = method + requestPath + bodyString + timestamp;
+    
+    // Generate HMAC-SHA256
+    const signature = crypto
+        .createHmac('sha256', config.secretKey)
+        .update(preparedStr, 'latin-1')
+        .digest('hex')
+        .toLowerCase();
+    
+    return signature;
+}
+
+/**
+ * Build authentication headers for API request
+ * 
+ * @param {string} method - HTTP method
+ * @param {string} requestPath - API endpoint path
+ * @param {Object|null} body - Request body
+ * @returns {Object} Headers object
+ */
+export function buildAuthHeaders(method, requestPath, body = null) {
+    const timestamp = Date.now().toString();
+    const signature = generateSignature(method, requestPath, body, timestamp);
+    
+    return {
+        'Content-Type': 'application/json',
+        'X-COINEX-KEY': config.accessId,
+        'X-COINEX-SIGN': signature,
+        'X-COINEX-TIMESTAMP': timestamp
+    };
+}
+
+/**
+ * Validate timestamp is within acceptable window
+ * 
+ * @param {string} timestamp - Timestamp to validate
+ * @param {number} windowMs - Acceptable time window (default: 5000ms)
+ * @returns {boolean}
+ */
+export function isTimestampValid(timestamp, windowMs = 5000) {
+    const now = Date.now();
+    const requestTime = parseInt(timestamp);
+    const diff = Math.abs(now - requestTime);
+    
+    return diff <= windowMs;
+}
+```
+
+### 4.4 API Client Module
+
+**File: `src/api.js`**
+
+```javascript
+import { config } from './config.js';
+import { buildAuthHeaders } from './auth.js';
+
+/**
+ * Make authenticated request to CoinEx API
+ * 
+ * @param {string} method - HTTP method
+ * @param {string} endpoint - API endpoint (without base URL)
+ * @param {Object|null} body - Request body
+ * @param {number} retryCount - Current retry attempt
+ * @returns {Promise<Object>} API response
+ */
+export async function coinexRequest(method, endpoint, body = null, retryCount = 0) {
+    const url = config.apiUrl + endpoint;
+    const headers = buildAuthHeaders(method, endpoint, body);
+    
+    const options = {
+        method,
+        headers,
+        timeout: config.requestTimeout
+    };
+    
+    if (body && (method === 'POST' || method === 'PUT')) {
+        options.body = JSON.stringify(body);
+    }
+    
+    try {
+        const response = await fetch(url, options);
+        const result = await response.json();
+        
+        // Success
+        if (result.code === 0) {
+            return {
+                success: true,
+                data: result.data,
+                message: result.message
+            };
+        }
+        
+        // API Error
+        return {
+            success: false,
+            error: result.message,
+            code: result.code,
+            data: result.data
+        };
+        
+    } catch (error) {
+        // Network Error - Retry Logic
+        if (retryCount < config.maxRetries) {
+            console.log(`Retry ${retryCount + 1}/${config.maxRetries} after error: ${error.message}`);
+            await sleep(1000 * (retryCount + 1)); // Exponential backoff
+            return coinexRequest(method, endpoint, body, retryCount + 1);
+        }
+        
+        return {
+            success: false,
+            error: error.message,
+            networkError: true
+        };
+    }
+}
+
+/**
+ * Get withdrawal configuration for a currency
+ */
+export async function getWithdrawalConfig(ccy) {
+    return await coinexRequest('GET', `/assets/deposit-withdraw-config?ccy=${ccy}`);
+}
+
+/**
+ * Get all withdrawal configurations
+ */
+export async function getAllWithdrawalConfigs() {
+    return await coinexRequest('GET', '/assets/all-deposit-withdraw-config');
+}
+
+/**
+ * Get withdrawal history
+ */
+export async function getWithdrawalHistory(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = queryString ? `/assets/withdrawal-history?${queryString}` : '/assets/withdrawal-history';
+    return await coinexRequest('GET', endpoint);
+}
+
+/**
+ * Get account balance
+ */
+export async function getSpotBalance() {
+    return await coinexRequest('GET', '/assets/spot/balance');
+}
+
+// Helper function
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+```
+
+---
+
+## 5. Withdrawal Methods
+
+### 5.1 On-Chain Withdrawal
+
+**Use Case:** Sending crypto to external wallets
+
+**Required Parameters:**
+- `ccy`: Currency code (e.g., "USDT", "BTC")
+- `chain`: Blockchain network (e.g., "TRC20", "ERC20", "BTC")
+- `to_address`: Destination blockchain address
+- `amount`: Withdrawal amount (string)
+
+**Optional Parameters:**
+- `memo`: Required for certain currencies (e.g., XRP, EOS)
+- `extra`: Additional parameters (e.g., `chain_id` for KDA)
+
+**Example:**
+```javascript
+{
+    ccy: "USDT",
+    chain: "TRC20",
+    to_address: "TXYZabcdefghijklmnopqrstuvwxyz123456",
+    amount: "100.50"
+}
+```
+
+**Fees:** Yes (varies by network)
+**Speed:** Depends on blockchain confirmations
+**Destination:** Must be whitelisted blockchain address
+
+### 5.2 Inter-User Transfer
+
+**Use Case:** Sending crypto to other CoinEx users (freelancers, contractors, etc.)
+
+**Required Parameters:**
+- `ccy`: Currency code
+- `to_address`: CoinEx user email or mobile number
+- `amount`: Transfer amount (string)
+
+**Optional Parameters:**
+- `memo`: Optional note/reference
+
+**Example:**
+```javascript
+{
+    ccy: "USDT",
+    to_address: "freelancer@email.com",  // or "+1234567890"
+    amount: "500.00"
+}
+```
+
+**Fees:** ✅ ZERO
+**Speed:** ⚡ Instant
+**Destination:** CoinEx registered email or mobile (must be whitelisted)
+
+### 5.3 Method Detection
+
+The CoinEx API automatically detects the withdrawal method:
+
+```javascript
+function getWithdrawalMethod(withdrawalData) {
+    // If chain is provided → on_chain
+    if (withdrawalData.chain) {
+        return 'on_chain';
+    }
+    
+    // If to_address looks like email or mobile → inter_user
+    if (isEmailOrMobile(withdrawalData.to_address)) {
+        return 'inter_user';
+    }
+    
+    // Default to on_chain
+    return 'on_chain';
+}
+
+function isEmailOrMobile(address) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const mobileRegex = /^\+?[1-9]\d{1,14}$/;
+    
+    return emailRegex.test(address) || mobileRegex.test(address);
+}
+```
+
+---
+
+## 6. Complete Code Implementation
+
+### 6.1 Withdrawal Module
+
+**File: `src/withdrawal.js`**
+
+```javascript
+import { coinexRequest, getWithdrawalConfig } from './api.js';
+import { config } from './config.js';
+import { logWithdrawal, logError } from './utils.js';
+
+/**
+ * Execute a single withdrawal
+ * 
+ * @param {Object} withdrawalData - Withdrawal parameters
+ * @returns {Promise<Object>} Withdrawal result
+ */
+export async function executeWithdrawal(withdrawalData) {
+    const { ccy, chain, to_address, amount, memo, extra } = withdrawalData;
+    
+    // Validation
+    const validation = await validateWithdrawal(withdrawalData);
+    if (!validation.valid) {
+        return {
+            success: false,
+            error: validation.error,
+            to_address
+        };
+    }
+    
+    // Dry run mode
+    if (config.dryRunMode) {
+        console.log(`[DRY RUN] Would withdraw ${amount} ${ccy} to ${to_address}`);
+        return {
+            success: true,
+            dryRun: true,
+            data: { mock: true },
+            to_address
+        };
+    }
+    
+    // Build request body
+    const body = {
+        ccy,
+        to_address,
+        amount: amount.toString()
+    };
+    
+    if (chain) body.chain = chain;
+    if (memo) body.memo = memo;
+    if (extra) body.extra = extra;
+    
+    // Execute withdrawal
+    console.log(`Processing: ${amount} ${ccy} to ${to_address}...`);
+    
+    const result = await coinexRequest('POST', '/assets/withdraw', body);
+    
+    if (result.success) {
+        const data = result.data;
+        console.log(`✓ Success: ID ${data.withdraw_id}, Method: ${data.withdraw_method}, Status: ${data.status}`);
+        
+        // Log successful withdrawal
+        await logWithdrawal({
+            ...withdrawalData,
+            withdraw_id: data.withdraw_id,
+            status: data.status,
+            tx_fee: data.tx_fee,
+            actual_amount: data.actual_amount,
+            timestamp: new Date().toISOString()
+        });
+        
+        return {
+            success: true,
+            data,
+            to_address
+        };
+    } else {
+        console.error(`✗ Failed: ${result.error}`);
+        
+        // Log error
+        await logError({
+            ...withdrawalData,
+            error: result.error,
+            code: result.code,
+            timestamp: new Date().toISOString()
+        });
+        
+        return {
+            success: false,
+            error: result.error,
+            code: result.code,
+            to_address
+        };
+    }
+}
+
+/**
+ * Validate withdrawal before execution
+ */
+async function validateWithdrawal(withdrawalData) {
+    const { ccy, amount, to_address, chain } = withdrawalData;
+    
+    // Check required fields
+    if (!ccy || !to_address || !amount) {
+        return {
+            valid: false,
+            error: 'Missing required fields: ccy, to_address, amount'
+        };
+    }
+    
+    // Validate amount
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+        return {
+            valid: false,
+            error: 'Invalid amount: must be positive number'
+        };
+    }
+    
+    // Safety check - max amount
+    if (numAmount > config.maxWithdrawalAmount) {
+        return {
+            valid: false,
+            error: `Amount exceeds max limit: ${config.maxWithdrawalAmount}`
+        };
+    }
+    
+    // Get withdrawal config
+    const configResult = await getWithdrawalConfig(ccy);
+    if (!configResult.success) {
+        return {
+            valid: false,
+            error: `Failed to get config for ${ccy}: ${configResult.error}`
+        };
+    }
+    
+    const assetConfig = configResult.data;
+    
+    // Check if withdrawals enabled
+    if (!assetConfig.asset.withdraw_enabled) {
+        return {
+            valid: false,
+            error: `Withdrawals disabled for ${ccy}`
+        };
+    }
+    
+    // Validate chain if on-chain withdrawal
+    if (chain) {
+        const chainConfig = assetConfig.chains.find(c => c.chain === chain);
+        
+        if (!chainConfig) {
+            return {
+                valid: false,
+                error: `Invalid chain: ${chain} for ${ccy}`
+            };
+        }
+        
+        if (!chainConfig.withdraw_enabled) {
+            return {
+                valid: false,
+                error: `Withdrawals disabled for ${ccy} on ${chain}`
+            };
+        }
+        
+        // Check minimum amount
+        const minAmount = parseFloat(chainConfig.min_withdraw_amount);
+        if (numAmount < minAmount) {
+            return {
+                valid: false,
+                error: `Amount below minimum: ${minAmount} ${ccy}`
+            };
+        }
+    }
+    
+    return { valid: true };
+}
+
+/**
+ * Process multiple withdrawals with delay
+ */
+export async function massWithdraw(withdrawals, delayMs = null) {
+    const delay = delayMs || config.requestDelay;
+    const results = [];
+    
+    console.log(`\n${'='.repeat(70)}`);
+    console.log(`MASS WITHDRAWAL PROCESS`);
+    console.log(`${'='.repeat(70)}`);
+    console.log(`Total withdrawals: ${withdrawals.length}`);
+    console.log(`Delay between requests: ${delay}ms`);
+    console.log(`Dry run mode: ${config.dryRunMode ? 'YES' : 'NO'}`);
+    console.log(`${'='.repeat(70)}\n`);
+    
+    for (let i = 0; i < withdrawals.length; i++) {
+        console.log(`\n[${i + 1}/${withdrawals.length}] ───────────────────────`);
+        
+        const result = await executeWithdrawal(withdrawals[i]);
+        results.push(result);
+        
+        // Delay before next request
+        if (i < withdrawals.length - 1) {
+            console.log(`Waiting ${delay}ms...`);
+            await sleep(delay);
+        }
+    }
+    
+    // Print summary
+    printSummary(results);
+    
+    return results;
+}
+
+/**
+ * Print withdrawal summary
+ */
+function printSummary(results) {
+    console.log(`\n${'='.repeat(70)}`);
+    console.log(`SUMMARY`);
+    console.log(`${'='.repeat(70)}`);
+    
+    const successful = results.filter(r => r.success);
+    const failed = results.filter(r => !r.success);
+    const dryRun = results.filter(r => r.dryRun);
+    
+    console.log(`Total: ${results.length}`);
+    console.log(`✓ Successful: ${successful.length}`);
+    console.log(`✗ Failed: ${failed.length}`);
+    if (dryRun.length > 0) {
+        console.log(`⚠ Dry run: ${dryRun.length}`);
+    }
+    
+    if (successful.length > 0 && !config.dryRunMode) {
+        console.log(`\n✓ Successful Withdrawals:`);
+        successful.forEach(r => {
+            const method = r.data.withdraw_method;
+            const fee = r.data.tx_fee;
+            const actual = r.data.actual_amount;
+            const ccy = r.data.ccy;
+            console.log(`  - ${r.to_address}`);
+            console.log(`    Amount: ${actual} ${ccy}, Fee: ${fee}, Method: ${method}`);
+        });
+    }
+    
+    if (failed.length > 0) {
+        console.log(`\n✗ Failed Withdrawals:`);
+        failed.forEach(r => {
+            console.log(`  - ${r.to_address}: ${r.error}`);
+        });
+    }
+    
+    console.log(`${'='.repeat(70)}\n`);
+}
+
+// Helper
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+```
+
+### 6.2 Utilities Module
+
+**File: `src/utils.js`**
+
+```javascript
+import fs from 'fs/promises';
+import path from 'path';
+
+const LOG_DIR = './logs';
+const WITHDRAWAL_LOG = path.join(LOG_DIR, 'withdrawals.json');
+const ERROR_LOG = path.join(LOG_DIR, 'errors.json');
+
+/**
+ * Ensure log directory exists
+ */
+async function ensureLogDir() {
+    try {
+        await fs.mkdir(LOG_DIR, { recursive: true });
+    } catch (error) {
+        console.error('Failed to create log directory:', error);
+    }
+}
+
+/**
+ * Log successful withdrawal
+ */
+export async function logWithdrawal(data) {
+    await ensureLogDir();
+    
+    try {
+        let logs = [];
+        try {
+            const content = await fs.readFile(WITHDRAWAL_LOG, 'utf8');
+            logs = JSON.parse(content);
+        } catch (error) {
+            // File doesn't exist yet
+        }
+        
+        logs.push(data);
+        await fs.writeFile(WITHDRAWAL_LOG, JSON.stringify(logs, null, 2));
+    } catch (error) {
+        console.error('Failed to log withdrawal:', error);
+    }
+}
+
+/**
+ * Log error
+ */
+export async function logError(data) {
+    await ensureLogDir();
+    
+    try {
+        let logs = [];
+        try {
+            const content = await fs.readFile(ERROR_LOG, 'utf8');
+            logs = JSON.parse(content);
+        } catch (error) {
+            // File doesn't exist yet
+        }
+        
+        logs.push(data);
+        await fs.writeFile(ERROR_LOG, JSON.stringify(logs, null, 2));
+    } catch (error) {
+        console.error('Failed to log error:', error);
+    }
+}
+
+/**
+ * Format currency amount
+ */
+export function formatAmount(amount, decimals = 8) {
+    return parseFloat(amount).toFixed(decimals);
+}
+
+/**
+ * Validate email format
+ */
+export function isValidEmail(email) {
+    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return regex.test(email);
+}
+
+/**
+ * Validate mobile format (E.164)
+ */
+export function isValidMobile(mobile) {
+    const regex = /^\+?[1-9]\d{1,14}$/;
+    return regex.test(mobile);
+}
+
+/**
+ * Format withdrawal status for display
+ */
+export function formatStatus(status) {
+    const statusMap = {
+        'audit': '🔍 Under Review',
+        'pass': '✓ Approved',
+        'processing': '⏳ Processing',
+        'confirming': '⏳ Confirming',
+        'not_pass': '✗ Rejected',
+        'cancel': '✗ Cancelled',
+        'finish': '✓ Completed',
+        'fail': '✗ Failed'
+    };
+    
+    return statusMap[status] || status;
+}
+```
+
+### 6.3 Main Entry Point
+
+**File: `index.js`**
+
+```javascript
+import { config, validateConfig } from './src/config.js';
+import { massWithdraw } from './src/withdrawal.js';
+import { getWithdrawalConfig, getSpotBalance } from './src/api.js';
+
+/**
+ * Main execution function
+ */
+async function main() {
+    try {
+        // Validate configuration
+        validateConfig();
+        
+        // Define withdrawals
+        const withdrawals = [
+            // Inter-user transfers (ZERO fees, instant)
+            {
+                ccy: 'USDT',
+                to_address: 'freelancer1@email.com',
+                amount: '100.00'
+            },
+            {
+                ccy: 'USDT',
+                to_address: 'freelancer2@email.com',
+                amount: '250.50'
+            },
+            
+            // On-chain withdrawals
+            {
+                ccy: 'USDT',
+                chain: 'TRC20',
+                to_address: 'TXYZabcdefghijklmnopqrstuvwxyz123456',
+                amount: '50.00'
+            },
+            {
+                ccy: 'BTC',
+                chain: '',
+                to_address: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
+                amount: '0.001'
+            }
+        ];
+        
+        // Optional: Check balance before withdrawals
+        console.log('Checking account balance...');
+        const balance = await getSpotBalance();
+        if (balance.success) {
+            console.log('✓ Balance retrieved successfully\n');
+        }
+        
+        // Optional: Check withdrawal configuration
+        console.log('Checking withdrawal configuration for USDT...');
+        const usdtConfig = await getWithdrawalConfig('USDT');
+        if (usdtConfig.success) {
+            console.log('✓ Configuration retrieved\n');
+        }
+        
+        // Execute mass withdrawal
+        const results = await massWithdraw(withdrawals);
+        
+        // Exit with appropriate code
+        const hasFailures = results.some(r => !r.success);
+        process.exit(hasFailures ? 1 : 0);
+        
+    } catch (error) {
+        console.error('Fatal error:', error);
+        process.exit(1);
+    }
+}
+
+// Run
+main();
+```
+
+---
+
+## 7. Usage Examples
+
+### 7.1 Basic Inter-User Transfers (Recommended)
+
+**Scenario:** Pay multiple freelancers in USDT
+
+```javascript
+const withdrawals = [
+    {
+        ccy: 'USDT',
+        to_address: 'developer@email.com',
+        amount: '500.00'
+    },
+    {
+        ccy: 'USDT',
+        to_address: 'designer@email.com',
+        amount: '300.00'
+    },
+    {
+        ccy: 'USDT',
+        to_address: '+1234567890',  // Mobile number
+        amount: '200.00'
+    }
+];
+
+await massWithdraw(withdrawals, 1500);
+```
+
+**Benefits:**
+- ✅ Zero fees
+- ⚡ Instant transfer
+- 💰 Total saved in fees vs on-chain
+
+### 7.2 On-Chain Withdrawals to External Wallets
+
+**Scenario:** Withdraw to cold storage wallets
+
+```javascript
+const withdrawals = [
+    // TRC20 USDT (lowest fees ~$1)
+    {
+        ccy: 'USDT',
+        chain: 'TRC20',
+        to_address: 'TXYZabcdefghijklmnopqrstuvwxyz123456',
+        amount: '1000.00'
+    },
+    
+    // ERC20 USDT (higher fees ~$10-50)
+    {
+        ccy: 'USDT',
+        chain: 'ERC20',
+        to_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+        amount: '5000.00'
+    },
+    
+    // Bitcoin
+    {
+        ccy: 'BTC',
+        chain: '',  // BTC has no chain parameter
+        to_address: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
+        amount: '0.01'
+    }
+];
+
+await massWithdraw(withdrawals, 2000);
+```
+
+### 7.3 Mixed Transfers
+
+**Scenario:** Pay some users on CoinEx, withdraw rest to wallets
+
+```javascript
+const withdrawals = [
+    // Inter-user (zero fees)
+    {
+        ccy: 'USDT',
+        to_address: 'trader@email.com',
+        amount: '1000.00'
+    },
+    
+    // On-chain withdrawal
+    {
+        ccy: 'USDT',
+        chain: 'TRC20',
+        to_address: 'TXYZabc123',
+        amount: '500.00'
+    },
+    
+    // Another inter-user
+    {
+        ccy: 'BTC',
+        to_address: 'investor@email.com',
+        amount: '0.05'
+    }
+];
+
+await massWithdraw(withdrawals);
+```
+
+### 7.4 Withdrawal with Memo
+
+**Scenario:** Withdraw XRP (requires memo/tag)
+
+```javascript
+const withdrawals = [
+    {
+        ccy: 'XRP',
+        chain: 'XRP',
+        to_address: 'rN7n7otQDd6FczFgLdlqtyMVrn3z1Dk1',
+        amount: '100',
+        memo: '123456789'  // Destination tag
+    }
+];
+
+await massWithdraw(withdrawals);
+```
+
+### 7.5 Withdrawal with Extra Parameters
+
+**Scenario:** Withdraw KDA (requires chain_id)
+
+```javascript
+const withdrawals = [
+    {
+        ccy: 'KDA',
+        chain: 'KDA',
+        to_address: 'k:abcdef1234567890',
+        amount: '50',
+        extra: {
+            chain_id: '0'  // KDA chain ID
+        }
+    }
+];
+
+await massWithdraw(withdrawals);
+```
+
+### 7.6 Load from JSON File
+
+**File: `data/withdrawals.json`**
+```json
+[
+    {
+        "ccy": "USDT",
+        "to_address": "user1@email.com",
+        "amount": "100.00"
+    },
+    {
+        "ccy": "USDT",
+        "chain": "TRC20",
+        "to_address": "TXYZabc123",
+        "amount": "50.00"
+    }
+]
+```
+
+**Code:**
+```javascript
+import fs from 'fs/promises';
+
+async function loadAndProcess() {
+    // Load withdrawals from file
+    const data = await fs.readFile('./data/withdrawals.json', 'utf8');
+    const withdrawals = JSON.parse(data);
+    
+    // Process
+    const results = await massWithdraw(withdrawals);
+    
+    // Save results
+    await fs.writeFile(
+        './data/results.json',
+        JSON.stringify(results, null, 2)
+    );
+}
+
+loadAndProcess();
+```
+
+### 7.7 CSV Import
+
+**File: `data/payments.csv`**
+```csv
+currency,address,amount,chain
+USDT,user1@email.com,100.00,
+USDT,user2@email.com,250.50,
+USDT,TXYZabc123,50.00,TRC20
+BTC,1A1zP1eP5QG,0.001,
+```
+
+**Code:**
+```javascript
+import fs from 'fs/promises';
+
+async function processCSV() {
+    const csv = await fs.readFile('./data/payments.csv', 'utf8');
+    const lines = csv.trim().split('\n');
+    const headers = lines[0].split(',');
+    
+    const withdrawals = lines.slice(1).map(line => {
+        const values = line.split(',');
+        const obj = {};
+        
+        headers.forEach((header, i) => {
+            const value = values[i].trim();
+            if (value) {
+                obj[header] = value;
+            }
+        });
+        
+        // Rename 'currency' to 'ccy', 'address' to 'to_address'
+        return {
+            ccy: obj.currency,
+            to_address: obj.address,
+            amount: obj.amount,
+            ...(obj.chain && { chain: obj.chain })
+        };
+    });
+    
+    await massWithdraw(withdrawals);
+}
+
+processCSV();
+```
+
+---
+
+## 8. Error Handling
+
+### 8.1 Common Error Codes
+
+| Code | Message | Cause | Solution |
+|------|---------|-------|----------|
+| 24 | Invalid signature | Wrong signature generation | Check SECRET_KEY, signature format |
+| 25 | Invalid timestamp | Timestamp outside window | Sync system time |
+| 107 | Insufficient balance | Not enough funds | Top up account |
+| 227 | Address not in whitelist | Address not whitelisted | Add to withdrawal whitelist |
+| 600 | IP not allowed | IP not whitelisted | Add IP to API key |
+| 3008 | Amount too small | Below minimum | Check min_withdraw_amount |
+| 3011 | Withdrawal disabled | Currency/chain disabled | Check withdraw_enabled |
+
+### 8.2 Error Handling Implementation
+
+```javascript
+/**
+ * Enhanced error handler with retry logic
+ */
+async function executeWithdrawalWithRetry(withdrawalData, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const result = await executeWithdrawal(withdrawalData);
+        
+        if (result.success) {
+            return result;
+        }
+        
+        // Check if error is retryable
+        const isRetryable = isRetryableError(result.code);
+        
+        if (!isRetryable || attempt === maxRetries) {
+            return result;
+        }
+        
+        // Exponential backoff
+        const delay = 1000 * Math.pow(2, attempt - 1);
+        console.log(`Retrying in ${delay}ms... (attempt ${attempt}/${maxRetries})`);
+        await sleep(delay);
+    }
+}
+
+/**
+ * Determine if error is retryable
+ */
+function isRetryableError(code) {
+    const retryableCodes = [
+        // Network/timeout errors
+        'ECONNRESET',
+        'ETIMEDOUT',
+        'ENOTFOUND',
+        
+        // Rate limit
+        429,
+        
+        // Server errors
+        500, 502, 503, 504
+    ];
+    
+    return retryableCodes.includes(code);
+}
+
+/**
+ * Handle specific errors
+ */
+function handleWithdrawalError(error, withdrawalData) {
+    const { code, message } = error;
+    
+    switch (code) {
+        case 24:
+            console.error('❌ Signature Error - Check your SECRET_KEY');
+            console.log('Debug: Verify signature generation algorithm');
+            break;
+            
+        case 107:
+            console.error('❌ Insufficient Balance');
+            console.log(`Required: ${withdrawalData.amount} ${withdrawalData.ccy}`);
+            console.log('Action: Top up your account or reduce amount');
+            break;
+            
+        case 227:
+            console.error('❌ Address Not Whitelisted');
+            console.log(`Address: ${withdrawalData.to_address}`);
+            console.log('Action: Add address to withdrawal whitelist via web interface');
+            break;
+            
+        case 3008:
+            console.error('❌ Amount Below Minimum');
+            console.log('Action: Increase withdrawal amount');
+            break;
+            
+        case 600:
+            console.error('❌ IP Not Allowed');
+            console.log('Action: Add your IP to API key whitelist');
+            break;
+            
+        default:
+            console.error(`❌ Error ${code}: ${message}`);
+    }
+}
+```
+
+### 8.3 Validation Errors
+
+```javascript
+/**
+ * Pre-flight validation
+ */
+async function validateBeforeWithdrawal(withdrawals) {
+    const errors = [];
+    
+    for (const w of withdrawals) {
+        // Check balance
+        const balance = await getSpotBalance();
+        const asset = balance.data.find(b => b.ccy === w.ccy);
+        
+        if (!asset || parseFloat(asset.available) < parseFloat(w.amount)) {
+            errors.push({
+                address: w.to_address,
+                error: `Insufficient ${w.ccy} balance`
+            });
+        }
+        
+        // Check whitelist
+        // Note: CoinEx doesn't provide API to check whitelist
+        // Must ensure addresses are whitelisted via web interface
+        
+        // Check amount limits
+        const config = await getWithdrawalConfig(w.ccy);
+        if (config.success) {
+            const chain = config.data.chains.find(c => c.chain === w.chain);
+            if (chain) {
+                const min = parseFloat(chain.min_withdraw_amount);
+                if (parseFloat(w.amount) < min) {
+                    errors.push({
+                        address: w.to_address,
+                        error: `Amount below minimum: ${min} ${w.ccy}`
+                    });
+                }
+            }
+        }
+    }
+    
+    return errors;
+}
+```
+
+---
+
+## 9. Testing & Validation
+
+### 9.1 Test Script
+
+**File: `test.js`**
+
+```javascript
+import { config, validateConfig } from './src/config.js';
+import { coinexRequest, getWithdrawalConfig, getSpotBalance } from './src/api.js';
+import { executeWithdrawal } from './src/withdrawal.js';
+
+/**
+ * Test suite
+ */
+async function runTests() {
+    console.log('🧪 Running CoinEx API Tests\n');
+    
+    // Test 1: Configuration
+    await testConfiguration();
+    
+    // Test 2: Authentication
+    await testAuthentication();
+    
+    // Test 3: Balance Query
+    await testBalanceQuery();
+    
+    // Test 4: Withdrawal Config
+    await testWithdrawalConfig();
+    
+    // Test 5: Dry Run Withdrawal
+    await testDryRunWithdrawal();
+    
+    console.log('\n✅ All tests completed');
+}
+
+async function testConfiguration() {
+    console.log('Test 1: Configuration Validation');
+    try {
+        validateConfig();
+        console.log('✓ Configuration valid\n');
+    } catch (error) {
+        console.error('✗ Configuration invalid:', error.message);
+        process.exit(1);
+    }
+}
+
+async function testAuthentication() {
+    console.log('Test 2: API Authentication');
+    const result = await coinexRequest('GET', '/assets/spot/balance');
+    
+    if (result.success) {
+        console.log('✓ Authentication successful\n');
+    } else {
+        console.error('✗ Authentication failed:', result.error);
+        if (result.code === 24) {
+            console.log('💡 Tip: Check your SECRET_KEY and signature generation');
+        }
+    }
+}
+
+async function testBalanceQuery() {
+    console.log('Test 3: Balance Query');
+    const result = await getSpotBalance();
+    
+    if (result.success) {
+        console.log('✓ Balance retrieved');
+        console.log(`  Found ${result.data.length} assets\n`);
+    } else {
+        console.error('✗ Failed to get balance:', result.error);
+    }
+}
+
+async function testWithdrawalConfig() {
+    console.log('Test 4: Withdrawal Configuration');
+    const result = await getWithdrawalConfig('USDT');
+    
+    if (result.success) {
+        console.log('✓ Config retrieved for USDT');
+        console.log(`  Withdrawals enabled: ${result.data.asset.withdraw_enabled}`);
+        console.log(`  Available chains: ${result.data.chains.length}\n`);
+    } else {
+        console.error('✗ Failed to get config:', result.error);
+    }
+}
+
+async function testDryRunWithdrawal() {
+    console.log('Test 5: Dry Run Withdrawal');
+    
+    // Enable dry run
+    const originalMode = config.dryRunMode;
+    config.dryRunMode = true;
+    
+    const testWithdrawal = {
+        ccy: 'USDT',
+        to_address: 'test@email.com',
+        amount: '1.00'
+    };
+    
+    const result = await executeWithdrawal(testWithdrawal);
+    
+    if (result.success && result.dryRun) {
+        console.log('✓ Dry run successful\n');
+    } else {
+        console.error('✗ Dry run failed');
+    }
+    
+    // Restore original mode
+    config.dryRunMode = originalMode;
+}
+
+// Run tests
+runTests().catch(error => {
+    console.error('Test suite failed:', error);
+    process.exit(1);
+});
+```
+
+### 9.2 Run Tests
+
+```bash
+# Enable dry run mode
+export DRY_RUN_MODE=true
+
+# Run tests
+npm test
+
+# Expected output:
+# 🧪 Running CoinEx API Tests
+# 
+# Test 1: Configuration Validation
+# ✓ Configuration valid
+# 
+# Test 2: API Authentication
+# ✓ Authentication successful
+# 
+# Test 3: Balance Query
+# ✓ Balance retrieved
+#   Found 15 assets
+# 
+# Test 4: Withdrawal Configuration
+# ✓ Config retrieved for USDT
+#   Withdrawals enabled: true
+#   Available chains: 3
+# 
+# Test 5: Dry Run Withdrawal
+# [DRY RUN] Would withdraw 1.00 USDT to test@email.com
+# ✓ Dry run successful
+# 
+# ✅ All tests completed
+```
+
+### 9.3 Production Testing Checklist
+
+Before going live:
+
+- [ ] Configuration validated
+- [ ] API authentication successful
+- [ ] Withdrawal addresses whitelisted
+- [ ] Balance sufficient for all withdrawals
+- [ ] Withdrawal configs checked
+- [ ] Dry run mode tested
+- [ ] Small amount test (0.01 USDT)
+- [ ] Inter-user transfer tested
+- [ ] On-chain withdrawal tested
+- [ ] Error handling tested
+- [ ] Logs working properly
+- [ ] Rate limiting respected
+
+---
+
+## 10. Security Best Practices
+
+### 10.1 API Key Security
+
+```javascript
+// ✅ GOOD: Use environment variables
+const SECRET_KEY = process.env.COINEX_SECRET_KEY;
+
+// ❌ BAD: Hardcode in code
+const SECRET_KEY = 'B4E3C2D1A0F9E8D7C6B5A4';
+
+// ✅ GOOD: Use .env file (add to .gitignore)
+// .env
+COINEX_SECRET_KEY=your_secret_here
+
+// .gitignore
+.env
+*.log
+logs/
+```
+
+### 10.2 IP Whitelisting
+
+**Recommended Configuration:**
+```
+API Settings:
+├── IP Whitelist: Your server's static IP
+├── Trade Permission: NO (unless needed)
+└── Withdraw Permission: YES (required)
+
+Benefits:
+✓ Only your server can use the API
+✓ Prevents unauthorized access
+✓ No 90-day expiration with IP binding
+```
+
+### 10.3 Withdrawal Limits
+
+```javascript
+// Implement daily limits
+class WithdrawalLimiter {
+    constructor(dailyLimit) {
+        this.dailyLimit = dailyLimit;
+        this.todayTotal = 0;
+        this.lastReset = new Date().toDateString();
+    }
+    
+    canWithdraw(amount) {
+        const today = new Date().toDateString();
+        
+        // Reset counter if new day
+        if (today !== this.lastReset) {
+            this.todayTotal = 0;
+            this.lastReset = today;
+        }
+        
+        return (this.todayTotal + amount) <= this.dailyLimit;
+    }
+    
+    recordWithdrawal(amount) {
+        this.todayTotal += amount;
+    }
+}
+
+// Usage
+const limiter = new WithdrawalLimiter(10000); // $10k daily limit
+
+if (limiter.canWithdraw(amount)) {
+    await executeWithdrawal(...);
+    limiter.recordWithdrawal(amount);
+} else {
+    console.error('Daily limit exceeded');
+}
+```
+
+### 10.4 Secure Logging
+
+```javascript
+// ✅ GOOD: Sanitize logs
+function sanitizeForLog(data) {
+    const sanitized = { ...data };
+    
+    // Remove sensitive fields
+    delete sanitized.secret_key;
+    
+    // Mask addresses
+    if (sanitized.to_address) {
+        const addr = sanitized.to_address;
+        sanitized.to_address = addr.slice(0, 6) + '...' + addr.slice(-4);
+    }
+    
+    return sanitized;
+}
+
+console.log(sanitizeForLog(withdrawalData));
+
+// ❌ BAD: Log everything
+console.log(withdrawalData); // May contain sensitive info
+```
+
+### 10.5 Two-Person Rule
+
+```javascript
+// Implement approval workflow for large amounts
+class ApprovalWorkflow {
+    constructor(threshold) {
+        this.threshold = threshold;
+        this.pendingApprovals = new Map();
+    }
+    
+    async requestApproval(withdrawal) {
+        const amount = parseFloat(withdrawal.amount);
+        
+        if (amount >= this.threshold) {
+            const id = generateId();
+            this.pendingApprovals.set(id, {
+                withdrawal,
+                requestedAt: Date.now(),
+                approved: false
+            });
+            
+            // Send notification to approver
+            await notifyApprover(id, withdrawal);
+            
+            return { needsApproval: true, approvalId: id };
+        }
+        
+        return { needsApproval: false };
+    }
+    
+    approve(approvalId) {
+        const pending = this.pendingApprovals.get(approvalId);
+        if (pending) {
+            pending.approved = true;
+            return pending.withdrawal;
+        }
+        return null;
+    }
+}
+```
+
+---
+
+## 11. Troubleshooting
+
+### 11.1 Common Issues
+
+#### Issue 1: "Invalid Signature" (Code 24)
+
+**Symptoms:**
+```json
+{
+  "code": 24,
+  "message": "Invalid signature"
+}
+```
+
+**Causes:**
+1. Wrong SECRET_KEY
+2. Incorrect signature format
+3. Body encoding issues
+4. Timestamp format wrong
+
+**Solutions:**
+```javascript
+// Check 1: Verify SECRET_KEY
+console.log('SECRET_KEY length:', config.secretKey.length); // Should be 64 chars
+
+// Check 2: Verify signature is lowercase
+const signature = generateSignature(...);
+console.log('Is lowercase:', signature === signature.toLowerCase());
+
+// Check 3: Verify timestamp format
+const timestamp = Date.now().toString();
+console.log('Timestamp:', timestamp); // Should be milliseconds
+
+// Check 4: Debug signature string
+const preparedStr = method + requestPath + bodyString + timestamp;
+console.log('Prepared string:', preparedStr);
+```
+
+#### Issue 2: "IP not allowed" (Code 600)
+
+**Solution:**
+1. Go to CoinEx → API Management
+2. Edit your API key
+3. Add your server's public IP
+4. Wait ~10 minutes for activation
+
+```bash
+# Get your public IP
+curl ifconfig.me
+
+# Add to API whitelist:
+# - Login to CoinEx
+# - API Management → Edit → IP Whitelist
+# - Add the IP from above
+```
+
+#### Issue 3: "Address not in whitelist" (Code 227)
+
+**Solution:**
+1. Go to Assets → Withdrawal
+2. Select coin and withdrawal type
+3. Add address to whitelist
+4. Confirm via 2FA and email
+5. Wait for email confirmation
+
+**Note:** Whitelist management is NOT available via API - must use web interface.
+
+#### Issue 4: Insufficient Balance (Code 107)
+
+**Debug:**
+```javascript
+// Check current balance
+const balance = await getSpotBalance();
+const usdtBalance = balance.data.find(b => b.ccy === 'USDT');
+
+console.log('Available:', usdtBalance.available);
+console.log('Frozen:', usdtBalance.frozen);
+console.log('Trying to withdraw:', amount);
+
+// Calculate if enough (including fees)
+const config = await getWithdrawalConfig('USDT');
+const chain = config.data.chains.find(c => c.chain === 'TRC20');
+const fee = parseFloat(chain.withdrawal_fee);
+const total = parseFloat(amount) + fee;
+
+console.log('Required (amount + fee):', total);
+console.log('Have enough:', parseFloat(usdtBalance.available) >= total);
+```
+
+#### Issue 5: Rate Limiting
+
+**Symptoms:**
+```json
+{
+  "code": 429,
+  "message": "Rate limit exceeded"
+}
+```
+
+**Solutions:**
+```javascript
+// 1. Increase delay between requests
+const DELAY = 2000; // 2 seconds
+
+// 2. Implement exponential backoff
+async function withRetry(fn, maxRetries = 3) {
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            return await fn();
+        } catch (error) {
+            if (error.code === 429 && i < maxRetries - 1) {
+                const delay = 1000 * Math.pow(2, i);
+                console.log(`Rate limited, waiting ${delay}ms...`);
+                await sleep(delay);
+            } else {
+                throw error;
+            }
+        }
+    }
+}
+
+// 3. Check rate limit headers
+// CoinEx returns: X-RateLimit-LongPeriod-{period}-Remaining
+```
+
+### 11.2 Debug Mode
+
+**File: `src/debug.js`**
+
+```javascript
+export function enableDebugMode() {
+    // Log all API requests
+    const originalFetch = global.fetch;
+    global.fetch = async (...args) => {
+        console.log('\n🔍 DEBUG: API Request');
+        console.log('URL:', args[0]);
+        console.log('Method:', args[1]?.method);
+        console.log('Headers:', args[1]?.headers);
+        console.log('Body:', args[1]?.body);
+        
+        const response = await originalFetch(...args);
+        const clone = response.clone();
+        const body = await clone.json();
+        
+        console.log('Response:', body);
+        console.log('─'.repeat(50));
+        
+        return response;
+    };
+}
+
+// Usage
+if (process.env.DEBUG === 'true') {
+    enableDebugMode();
+}
+```
+
+### 11.3 Verification Checklist
+
+Before contacting support:
+
+```javascript
+async function diagnose() {
+    console.log('🔍 Running Diagnostics...\n');
+    
+    // 1. Configuration
+    console.log('1. Configuration');
+    console.log(`   ACCESS_ID: ${config.accessId.slice(0, 8)}...`);
+    console.log(`   SECRET_KEY: ${config.secretKey.slice(0, 8)}...`);
+    console.log(`   API_URL: ${config.apiUrl}`);
+    console.log();
+    
+    // 2. Network connectivity
+    console.log('2. Network Connectivity');
+    try {
+        const response = await fetch('https://api.coinex.com/v2/ping');
+        console.log(`   ✓ Can reach CoinEx API`);
+    } catch (error) {
+        console.log(`   ✗ Cannot reach CoinEx API: ${error.message}`);
+    }
+    console.log();
+    
+    // 3. Authentication
+    console.log('3. Authentication');
+    const authTest = await getSpotBalance();
+    if (authTest.success) {
+        console.log(`   ✓ Authentication working`);
+    } else {
+        console.log(`   ✗ Authentication failed: ${authTest.error}`);
+    }
+    console.log();
+    
+    // 4. Withdrawal configuration
+    console.log('4. Withdrawal Configuration');
+    const configTest = await getWithdrawalConfig('USDT');
+    if (configTest.success) {
+        console.log(`   ✓ Can retrieve withdrawal config`);
+        console.log(`   Withdrawals enabled: ${configTest.data.asset.withdraw_enabled}`);
+    } else {
+        console.log(`   ✗ Cannot get config: ${configTest.error}`);
+    }
+    console.log();
+    
+    console.log('✅ Diagnostics complete');
+}
+
+// Run
+diagnose();
+```
+
+---
+
+## 12. API Reference
+
+### 12.1 Submit Withdrawal
+
+**Endpoint:** `POST /assets/withdraw`
+
+**Headers:**
+```
+X-COINEX-KEY: your_access_id
+X-COINEX-SIGN: signature
+X-COINEX-TIMESTAMP: timestamp_ms
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "ccy": "USDT",
+  "chain": "TRC20",
+  "to_address": "TXYZabc123...",
+  "amount": "100.00",
+  "memo": "optional",
+  "extra": {
+    "chain_id": "0"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "code": 0,
+  "data": {
+    "withdraw_id": 206,
+    "created_at": 1524228297321,
+    "ccy": "USDT",
+    "chain": "TRC20",
+    "amount": "100.00000000",
+    "actual_amount": "99.00000000",
+    "withdraw_method": "on_chain",
+    "memo": "",
+    "tx_fee": "1.00000000",
+    "fee_ccy": "USDT",
+    "tx_id": "",
+    "to_address": "TXYZabc123...",
+    "confirmations": 0,
+    "explorer_address_url": "https://...",
+    "explorer_tx_url": "https://...",
+    "status": "audit",
+    "remark": ""
+  },
+  "message": "OK"
+}
+```
+
+### 12.2 Get Withdrawal Config
+
+**Endpoint:** `GET /assets/deposit-withdraw-config?ccy=USDT`
+
+**Response:**
+```json
+{
+  "code": 0,
+  "data": {
+    "asset": {
+      "ccy": "USDT",
+      "deposit_enabled": true,
+      "withdraw_enabled": true,
+      "inter_transfer_enabled": true,
+      "is_st": false
+    },
+    "chains": [
+      {
+        "chain": "TRC20",
+        "min_deposit_amount": "1",
+        "min_withdraw_amount": "10",
+        "deposit_enabled": true,
+        "withdraw_enabled": true,
+        "deposit_delay_minutes": 0,
+        "safe_confirmations": 20,
+        "irreversible_confirmations": 30,
+        "deflation_rate": "0",
+        "withdrawal_fee": "1.00",
+        "withdrawal_precision": 6,
+        "memo": "",
+        "is_memo_required_for_deposit": false,
+        "explorer_asset_url": "https://..."
+      }
+    ]
+  },
+  "message": "OK"
+}
+```
+
+### 12.3 Get Withdrawal History
+
+**Endpoint:** `GET /assets/withdrawal-history`
+
+**Query Parameters:**
+- `ccy`: Currency filter
+- `page`: Page number
+- `limit`: Results per page
+
+### 12.4 Get Balance
+
+**Endpoint:** `GET /assets/spot/balance`
+
+**Response:**
+```json
+{
+  "code": 0,
+  "data": [
+    {
+      "ccy": "USDT",
+      "available": "1000.00000000",
+      "frozen": "0.00000000"
+    }
+  ],
+  "message": "OK"
+}
+```
+
+---
+
+## Appendix A: Quick Start Checklist
+
+```
+┌─────────────────────────────────────────┐
+│ QUICK START CHECKLIST                   │
+├─────────────────────────────────────────┤
+│ Setup:                                  │
+│ ☐ Create CoinEx account                │
+│ ☐ Complete KYC verification            │
+│ ☐ Enable 2FA                           │
+│ ☐ Create API key with Withdraw perm    │
+│ ☐ Save ACCESS_ID and SECRET_KEY        │
+│ ☐ Add server IP to API whitelist       │
+│ ☐ Add withdrawal addresses to whitelist│
+│                                         │
+│ Code Setup:                             │
+│ ☐ Install Node.js v14+                 │
+│ ☐ Clone/create project structure       │
+│ ☐ Create .env file with credentials    │
+│ ☐ Install dependencies (npm install)   │
+│ ☐ Run test script                      │
+│                                         │
+│ Testing:                                │
+│ ☐ Enable DRY_RUN_MODE=true             │
+│ ☐ Test with small amount (1 USDT)      │
+│ ☐ Test inter-user transfer             │
+│ ☐ Test on-chain withdrawal             │
+│ ☐ Verify logs are working              │
+│                                         │
+│ Production:                             │
+│ ☐ Set DRY_RUN_MODE=false               │
+│ ☐ Set appropriate request delays       │
+│ ☐ Set max withdrawal limits            │
+│ ☐ Monitor first few withdrawals        │
+│ ☐ Check withdrawal status              │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## Appendix B: Network Fee Comparison
+
+| Network | Currency | Typical Fee | Speed | Recommended For |
+|---------|----------|-------------|-------|-----------------|
+| **TRC20** | USDT | ~$1 | 3 min | ✅ Best for USDT |
+| **ERC20** | USDT | $10-50 | 5-15 min | Large amounts only |
+| **BEP20** | USDT | ~$0.50 | 1 min | Good alternative |
+| **Polygon** | USDT | ~$0.10 | 2 min | Cheapest |
+| **Bitcoin** | BTC | $2-20 | 10-60 min | Large BTC amounts |
+| **Lightning** | BTC | <$0.01 | Instant | Small BTC amounts |
+| **Inter-User** | All | **$0** | **Instant** | ⭐ **Best if possible** |
+
+---
+
+**End of Developer Guide**
+
+*For support, contact: [CoinEx Support](https://support.coinex.com)*
+
+*API Documentation: [https://docs.coinex.com/api/v2/](https://docs.coinex.com/api/v2/)*
